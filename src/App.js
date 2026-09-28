@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 import { jsPDF } from 'jspdf';
 
@@ -12,11 +12,10 @@ function App() {
 
   const [currentPage, setCurrentPage] =
     useState('inicio');
-    
-
 
   const [currentUser, setCurrentUser] =
-  useState(null);
+    useState(null);
+
   /* ==================================================
      LOGIN
   ================================================== */
@@ -2090,15 +2089,68 @@ function ClientsPage() {
 
 
   const [clients, setClients] =
-    useState(() => {
+    useState([]);
 
-      return (
-        JSON.parse(
-          localStorage.getItem('clients')
-        ) || []
-      );
+  const [loadingClients, setLoadingClients] =
+    useState(true);
 
-    });
+  const [clientError, setClientError] =
+    useState('');
+
+
+  useEffect(() => {
+
+    fetch(
+      'http://localhost:3001/api/clientes'
+    )
+
+      .then((response) => {
+
+        if (!response.ok) {
+
+          throw new Error(
+            'No se pudieron consultar los clientes.'
+          );
+
+        }
+
+        return response.json();
+
+      })
+
+      .then((data) => {
+
+        setClients(data);
+
+        setClientError('');
+
+        localStorage.setItem(
+          'clients',
+          JSON.stringify(data)
+        );
+
+      })
+
+      .catch((error) => {
+
+        console.error(
+          'Error al consultar clientes:',
+          error
+        );
+
+        setClientError(
+          'No fue posible cargar los clientes del servidor.'
+        );
+
+      })
+
+      .finally(() => {
+
+        setLoadingClients(false);
+
+      });
+
+  }, []);
 
 
   const [search, setSearch] =
@@ -2194,7 +2246,7 @@ function ClientsPage() {
 
   /* GUARDAR */
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
 
     event.preventDefault();
 
@@ -2214,12 +2266,10 @@ function ClientsPage() {
     }
 
 
-    let updatedClients;
-
-
+    // Si estamos editando un cliente
     if (editingClient) {
 
-      updatedClients =
+      const updatedClients =
         clients.map(
           (client) =>
             client.id === editingClient.id
@@ -2230,55 +2280,142 @@ function ClientsPage() {
               : client
         );
 
-    } else {
 
-      const newClient = {
-
-        id: Date.now(),
-
-        ...formData
-
-      };
+      localStorage.setItem(
+        'clients',
+        JSON.stringify(
+          updatedClients
+        )
+      );
 
 
-      updatedClients = [
+      setClients(
+        updatedClients
+      );
 
-        ...clients,
 
-        newClient
+      setShowForm(false);
 
-      ];
+      setEditingClient(null);
+
+
+      setFormData({
+
+        nombre: '',
+        empresa: '',
+        telefono: '',
+        correo: '',
+        direccion: ''
+
+      });
+
+
+      return;
 
     }
 
 
-    localStorage.setItem(
-      'clients',
-      JSON.stringify(
-        updatedClients
-      )
-    );
+    // Registrar cliente nuevo en el backend
+
+    try {
+
+      const response =
+        await fetch(
+          'http://localhost:3001/api/clientes',
+          {
+            method: 'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json'
+            },
+
+            body:
+              JSON.stringify(
+                formData
+              )
+
+          }
+        );
 
 
-    setClients(
-      updatedClients
-    );
+      const data =
+        await response.json();
 
 
-    setShowForm(false);
+      if (!response.ok) {
 
-    setEditingClient(null);
+        throw new Error(
+          data.mensaje ||
+          'No se pudo registrar el cliente.'
+        );
+
+      }
 
 
-    setFormData({
+      setClients(
+        (previousClients) => [
 
-      nombre: '',
-      empresa: '',
-      telefono: '',
-      correo: '',
-      direccion: ''
+          ...previousClients,
 
-    });
+          data.cliente
+
+        ]
+      );
+
+
+      // Guardamos también en localStorage
+      const updatedClients = [
+
+        ...clients,
+
+        data.cliente
+
+      ];
+
+      localStorage.setItem(
+        'clients',
+        JSON.stringify(
+          updatedClients
+        )
+      );
+
+
+      alert(
+        data.mensaje
+      );
+
+
+      setShowForm(false);
+
+      setEditingClient(null);
+
+
+      setFormData({
+
+        nombre: '',
+        empresa: '',
+        telefono: '',
+        correo: '',
+        direccion: ''
+
+      });
+
+
+    } catch (error) {
+
+      console.error(
+        'Error al registrar el cliente:',
+        error
+      );
+
+
+      alert(
+        error.message ||
+        'No fue posible conectar con el servidor.'
+      );
+
+    }
 
   };
 
@@ -2294,7 +2431,9 @@ function ClientsPage() {
 
 
     if (!confirmDelete) {
+
       return;
+
     }
 
 
@@ -2414,6 +2553,24 @@ function ClientsPage() {
       </div>
 
 
+      {loadingClients && (
+
+        <p>
+          Cargando clientes...
+        </p>
+
+      )}
+
+
+      {clientError && (
+
+        <p style={{ color: 'red' }}>
+          {clientError}
+        </p>
+
+      )}
+
+
       {/* FORMULARIO */}
 
       {showForm && (
@@ -2426,9 +2583,11 @@ function ClientsPage() {
             <div>
 
               <h2>
+
                 {editingClient
                   ? 'Editar cliente'
                   : 'Nuevo cliente'}
+
               </h2>
 
               <p>
@@ -2552,9 +2711,11 @@ function ClientsPage() {
                 type="submit"
                 className="save-button"
               >
+
                 {editingClient
                   ? 'Guardar cambios'
                   : 'Guardar cliente'}
+
               </button>
 
             </div>
@@ -2772,7 +2933,7 @@ function ClientsPage() {
 
   );
 
-}
+} // ← AQUÍ estaba el cierre que faltaba
 
 
 /* ==================================================
@@ -2803,14 +2964,14 @@ function UsersPage() {
 
 
   const [formData, setFormData] =
-  useState({
+    useState({
 
-    nombre: '',
-    correo: '',
-    contraseña: '',
-    rol: 'Técnico'
+      nombre: '',
+      correo: '',
+      contraseña: '',
+      rol: 'Técnico'
 
-  });
+    });
 
 
   /* CAMBIAR CAMPOS */
@@ -2843,12 +3004,12 @@ function UsersPage() {
 
     setFormData({
 
-  nombre: '',
-  correo: '',
-  contraseña: '',
-  rol: 'Técnico'
+      nombre: '',
+      correo: '',
+      contraseña: '',
+      rol: 'Técnico'
 
-});
+    });
 
 
     setShowForm(true);
@@ -2865,12 +3026,12 @@ function UsersPage() {
 
     setFormData({
 
-  nombre: user.nombre || '',
-  correo: user.correo || '',
-  contraseña: user.contraseña || '',
-  rol: user.rol || 'Técnico'
+      nombre: user.nombre || '',
+      correo: user.correo || '',
+      contraseña: user.contraseña || '',
+      rol: user.rol || 'Técnico'
 
-});
+    });
 
 
     setShowForm(true);
@@ -2886,10 +3047,10 @@ function UsersPage() {
 
 
     if (
-  !formData.nombre ||
-  !formData.correo ||
-  !formData.contraseña
-) {
+      !formData.nombre ||
+      !formData.correo ||
+      !formData.contraseña
+    ) {
 
       alert(
         'Completa los campos obligatorios.'
@@ -2958,12 +3119,12 @@ function UsersPage() {
 
     setFormData({
 
-  nombre: '',
-  correo: '',
-  contraseña: '',
-  rol: 'Técnico'
+      nombre: '',
+      correo: '',
+      contraseña: '',
+      rol: 'Técnico'
 
-});
+    });
 
   };
 
@@ -2979,7 +3140,9 @@ function UsersPage() {
 
 
     if (!confirmDelete) {
+
       return;
+
     }
 
 
@@ -3018,6 +3181,7 @@ function UsersPage() {
 
       nombre: '',
       correo: '',
+      contraseña: '',
       rol: 'Técnico'
 
     });
@@ -3126,21 +3290,25 @@ function UsersPage() {
               />
 
             </div>
-<div className="form-group">
 
-  <label>
-    Contraseña *
-  </label>
 
-  <input
-    type="password"
-    name="contraseña"
-    placeholder="Contraseña"
-    value={formData.contraseña}
-    onChange={handleChange}
-  />
+            <div className="form-group">
 
-</div>
+              <label>
+                Contraseña *
+              </label>
+
+
+              <input
+                type="password"
+                name="contraseña"
+                placeholder="Contraseña"
+                value={formData.contraseña}
+                onChange={handleChange}
+              />
+
+            </div>
+
 
             <div className="form-group">
 
